@@ -17,6 +17,7 @@ Usage:
 """
 import argparse
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -48,17 +49,19 @@ def _classify_command(command: str, script_content: str = "") -> str:
     happens here, before the governed call. ``command`` is just the
     interpreter invocation (e.g. "bash foo.sh"); the actual risk usually
     lives in the uploaded script body, so ``script_content`` is scanned too.
+
+    ``command`` and ``script_content`` are matched independently (rather than
+    concatenated into one string) so a pattern can't span the boundary
+    between them, e.g. "curl" appearing at the end of ``command`` and
+    "| sh" appearing at the start of ``script_content`` should not combine
+    into a spurious cross-boundary match.
     """
-    combined = f"{command}\n{script_content}"
-    if any(re.search(p, combined) for p in _DESTRUCTIVE_PATTERNS):
+    texts = (command, script_content)
+    if any(re.search(p, t, re.IGNORECASE) for p in _DESTRUCTIVE_PATTERNS for t in texts):
         return "destructive"
-    if any(re.search(p, combined) for p in _CREDENTIAL_EXFIL_PATTERNS):
+    if any(re.search(p, t, re.IGNORECASE) for p in _CREDENTIAL_EXFIL_PATTERNS for t in texts):
         return "credential_exfil"
     return "shell_exec"
-
-
-def _run_in_sandbox(action: dict, *, sandbox, timeout: int):
-    return sandbox.commands.run(action["command"], timeout=timeout)
 
 
 def main() -> int:
@@ -85,7 +88,13 @@ def main() -> int:
         parser.error(f"script not found: {args.script}")
 
     remote_name = args.script.name
-    command = " ".join([args.interpreter, remote_name, *script_args])
+    # k8s-agent-sandbox's commands.run() only accepts a single shell command
+    # string (no argv-list/non-shell invocation), so script_args are
+    # shell-quoted with shlex.join rather than naively space-joined. This
+    # keeps each arg a single token for whatever shell the sandbox pod uses
+    # to execute it, closing off metacharacters (;, |, $(), backticks, etc.)
+    # in script_args from being interpreted as additional shell syntax.
+    command = shlex.join([args.interpreter, remote_name, *script_args])
 
     # Read the script exactly once. Classifying and uploading from independently
     # taken reads would let a file swapped between the two reads be approved as
@@ -103,7 +112,7 @@ def main() -> int:
         client = SandboxClient(connection_config=SandboxLocalTunnelConnectionConfig())
         sandbox = client.create_sandbox(warmpool=args.warmpool, namespace=args.namespace)
         sandbox.files.write(remote_name, script_bytes)
-        return _run_in_sandbox(action, sandbox=sandbox, timeout=args.timeout)
+        return sandbox.commands.run(action["command"], timeout=args.timeout)
 
     governed_run = govern(
         _dispatch,
