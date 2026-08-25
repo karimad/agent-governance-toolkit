@@ -1,0 +1,2 @@
+agent-governance-toolkit[full]
+k8s-agent-sandbox
