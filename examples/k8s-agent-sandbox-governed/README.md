@@ -18,17 +18,18 @@ governance wrapper around its Python SDK.
 Agent driving script (run_agent.py)
      |
      v
-_classify_command()   -- pre-classifies the command + uploaded script body
+_classify_command()   -- pre-classifies the command + local script body
      |                    into a discrete action.type (policy DSL only
      |                    supports equality/membership, not substring match)
      v
 govern(...)            -- evaluates policy.yaml against {"type": ..., "command": ...}
-     |-- allow  --> sandbox.commands.run(...)  -->  agent-sandbox pod
-     '-- deny   --> GovernanceDenied raised, pod never contacted
+     |-- allow  --> create_sandbox() -> files.write() -> sandbox.commands.run(...)
+     '-- deny   --> GovernanceDenied raised, no sandbox pod ever claimed
 ```
 
-A denied command never reaches the sandbox pod at all — this is
-defense-in-depth *before* isolation, not a substitute for it.
+A denied command never reaches (or even claims) a sandbox pod — this is
+defense-in-depth *before* isolation, not a substitute for it, and it avoids
+wasting a warm-pool claim on a request that governance would reject anyway.
 
 ## Quick Start
 
@@ -80,8 +81,15 @@ relying on the pod's own isolation to contain it after the fact.
 ```python
 from agentmesh.governance import govern, GovernanceDenied
 
+def _dispatch(action):
+    # Sandbox is claimed here, inside the governed call, so a denied
+    # action never costs a pod claim.
+    sandbox = client.create_sandbox(warmpool="...", namespace="...")
+    sandbox.files.write(remote_name, script_bytes)
+    return sandbox.commands.run(action["command"], timeout=60)
+
 governed_run = govern(
-    lambda action: sandbox.commands.run(action["command"], timeout=60),
+    _dispatch,
     policy="policy.yaml",
     agent_id="run_agent:agent-sandbox-demo",
 )
@@ -116,4 +124,14 @@ it entirely.
 ## Notes
 
 - Tested against a local [EKS Anywhere](https://anywhere.eks.amazonaws.com/) (Docker provider) cluster; the same pattern works unmodified against `kind`, `minikube`, or any real cluster running agent-sandbox.
-- `policy.yaml`'s two rules (`block-destructive-commands`, `block-credential-exfil`) are illustrative — extend `_classify_command()` and the policy's `rules` list for your own risk model.
+- `policy.yaml`'s rules (`block-destructive-commands`, `block-credential-exfil`, `allow-shell-exec`) are illustrative — extend `_classify_command()` and the policy's `rules` list for your own risk model. `default_action: deny` means any `action.type` not explicitly allowed is blocked, including future classifications `_classify_command()` doesn't yet return.
+- `run_agent.py` uses `SandboxLocalTunnelConnectionConfig`, which assumes the sandbox-router is reachable via a local tunnel (e.g. `kubectl port-forward`, or a `kind`/`minikube` cluster on localhost). If you're targeting a remote cluster, swap in the connection config `k8s-agent-sandbox` provides for direct/in-cluster access instead.
+
+## Known Limitations
+
+- `_classify_command()`'s regex patterns are a minimal illustrative filter, not a production-grade detector. They can be bypassed, e.g.: unusual flag casing or ordering not covered by the pattern, lowercase env var names (`$aws_secret_access_key` vs `$AWS_SECRET_ACCESS_KEY`), or exfiltration via a command/tool not in `_CREDENTIAL_EXFIL_PATTERNS` (e.g. piping to something other than `curl`/`wget`/`nc`). Do not deploy this policy verbatim as a production risk model — treat it as a starting point.
+- Classification happens once, from the local copy of the script; it does not account for scripts that download or generate additional code at runtime inside the sandbox.
+
+## Disclaimer
+
+This example's `README.md`, `policy.yaml`, and `run_agent.py` were drafted with Claude Code, then reviewed and manually verified by the author against a real cluster (see Testing in the PR description). No part of this example was generated and submitted without human review.

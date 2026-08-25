@@ -1,2 +1,2 @@
-agent-governance-toolkit[full]
-k8s-agent-sandbox
+agent-governance-toolkit[full]>=5.0.0
+k8s-agent-sandbox>=0.1.0

@@ -87,18 +87,30 @@ def main() -> int:
     remote_name = args.script.name
     command = " ".join([args.interpreter, remote_name, *script_args])
 
-    client = SandboxClient(connection_config=SandboxLocalTunnelConnectionConfig())
-    sandbox = client.create_sandbox(warmpool=args.warmpool, namespace=args.namespace)
-    try:
-        sandbox.files.write(remote_name, args.script.read_bytes())
+    # Read the script exactly once. Classifying and uploading from independently
+    # taken reads would let a file swapped between the two reads be approved as
+    # the safe version but executed as whatever the second read picked up.
+    script_bytes = args.script.read_bytes()
+    script_text = script_bytes.decode(errors="ignore")
+    action_type = _classify_command(command, script_text)
 
-        governed_run = govern(
-            lambda action: _run_in_sandbox(action, sandbox=sandbox, timeout=args.timeout),
-            policy=str(POLICY_PATH),
-            agent_id=f"run_agent:{args.namespace}",
-        )
-        script_text = args.script.read_text(errors="ignore")
-        action_type = _classify_command(command, script_text)
+    # Claim a sandbox pod only once the action is dispatched, so a denied
+    # command never costs a warm-pool claim.
+    sandbox = None
+
+    def _dispatch(action: dict):
+        nonlocal sandbox
+        client = SandboxClient(connection_config=SandboxLocalTunnelConnectionConfig())
+        sandbox = client.create_sandbox(warmpool=args.warmpool, namespace=args.namespace)
+        sandbox.files.write(remote_name, script_bytes)
+        return _run_in_sandbox(action, sandbox=sandbox, timeout=args.timeout)
+
+    governed_run = govern(
+        _dispatch,
+        policy=str(POLICY_PATH),
+        agent_id=f"run_agent:{args.namespace}",
+    )
+    try:
         try:
             result = governed_run(action={"type": action_type, "command": command})
         except GovernanceDenied as e:
@@ -109,7 +121,8 @@ def main() -> int:
         sys.stderr.write(result.stderr)
         return result.exit_code
     finally:
-        sandbox.terminate()
+        if sandbox is not None:
+            sandbox.terminate()
 
 
 if __name__ == "__main__":
