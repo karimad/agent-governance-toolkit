@@ -129,8 +129,9 @@ it entirely.
 
 ## Known Limitations
 
-- `_classify_command()`'s regex patterns are a minimal illustrative filter, not a production-grade detector. They can be bypassed, e.g.: unusual flag casing or ordering not covered by the pattern, lowercase env var names (`$aws_secret_access_key` vs `$AWS_SECRET_ACCESS_KEY`), or exfiltration via a command/tool not in `_CREDENTIAL_EXFIL_PATTERNS` (e.g. piping to something other than `curl`/`wget`/`nc`). Do not deploy this policy verbatim as a production risk model — treat it as a starting point.
+- `_classify_command()`'s regex patterns are a minimal illustrative filter, not a production-grade detector. Matching is case-insensitive and flag-order-tolerant for the patterns above, but the pattern set itself is still narrow and can be bypassed, e.g. exfiltration via a command/tool not in `_CREDENTIAL_EXFIL_PATTERNS` (piping to something other than `curl`/`wget`/`nc`), or any destructive/exfil technique not covered by the listed patterns at all. Do not deploy this policy verbatim as a production risk model — treat it as a starting point.
 - Classification happens once, from the local copy of the script; it does not account for scripts that download or generate additional code at runtime inside the sandbox.
+- `k8s-agent-sandbox`'s `commands.run()` only accepts a single shell command string, not an argv list, so `run_agent.py` shell-quotes `script_args` with `shlex.join()` before sending. This prevents metacharacters in `script_args` from being interpreted as additional shell syntax by whatever shell the sandbox pod uses to execute the command, but it doesn't change what the script itself does once running — a malicious script body is still subject only to `_classify_command()`'s pattern matching above.
 
 ## Disclaimer
 
