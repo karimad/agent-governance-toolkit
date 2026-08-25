@@ -13,7 +13,7 @@ all (rather than reaching it and being caught/mitigated by isolation).
 Usage:
   pip install -r requirements.txt
   python run_agent.py my_tool.sh --interpreter bash -- --flag value
-  python run_agent.py agent.py --warmpool python-sandbox-warmpool --namespace agent-sandbox-demo
+  python run_agent.py agent.py --warmpool python-warmpool --namespace agent-sandbox-demo
 """
 import argparse
 import re
@@ -76,7 +76,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("script", type=Path, help="Local path to the script to run in the sandbox")
     parser.add_argument("--interpreter", default="python3", help="Interpreter used to invoke the script (python3, bash, node, ...)")
-    parser.add_argument("--warmpool", default="python-sandbox-warmpool", help="SandboxWarmPool to draw the sandbox from")
+    parser.add_argument("--warmpool", default="python-warmpool", help="SandboxWarmPool to draw the sandbox from")
     parser.add_argument("--namespace", default="agent-sandbox-demo", help="Namespace containing the warm pool")
     parser.add_argument("--timeout", type=int, default=60, help="Command execution timeout in seconds")
     args = parser.parse_args(own_argv)

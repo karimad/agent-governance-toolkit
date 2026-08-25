@@ -36,7 +36,7 @@ wasting a warm-pool claim on a request that governance would reject anyway.
 ### 1. Set up an agent-sandbox cluster
 
 Follow the [agent-sandbox quickstart](https://github.com/kubernetes-sigs/agent-sandbox/blob/main/examples/quickstart/README.md)
-to get a `python-sandbox-warmpool` running in the `agent-sandbox-demo`
+to get a `python-warmpool` running in the `agent-sandbox-demo`
 namespace on any cluster (kind by default).
 
 ### 2. Install dependencies
@@ -54,7 +54,7 @@ other third-party packages are needed.
 ### 3. Run a benign script — allowed
 
 ```bash
-python run_agent.py hello_world.py --warmpool python-sandbox-warmpool --namespace agent-sandbox-demo
+python run_agent.py hello_world.py --warmpool python-warmpool --namespace agent-sandbox-demo
 ```
 
 ```
@@ -65,7 +65,7 @@ Hello from a governed sandbox pod
 
 ```bash
 python run_agent.py destructive.sh --interpreter bash \
-  --warmpool python-sandbox-warmpool --namespace agent-sandbox-demo
+  --warmpool python-warmpool --namespace agent-sandbox-demo
 ```
 
 ```
@@ -112,7 +112,7 @@ left behind per-invocation. To tear down the shared resources this example
 relies on:
 
 ```bash
-kubectl delete sandboxwarmpool python-sandbox-warmpool -n agent-sandbox-demo
+kubectl delete sandboxwarmpool python-warmpool -n agent-sandbox-demo
 kubectl delete sandboxtemplate python-sandbox-template -n agent-sandbox-demo
 ```
 
