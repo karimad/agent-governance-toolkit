@@ -16,6 +16,7 @@ Usage:
   python run_agent.py agent.py --warmpool python-warmpool --namespace agent-sandbox-demo
 """
 import argparse
+import os
 import re
 import shlex
 import sys
@@ -27,10 +28,13 @@ from k8s_agent_sandbox.models import SandboxLocalTunnelConnectionConfig
 
 POLICY_PATH = Path(__file__).resolve().parent / "policy.yaml"
 
-_DESTRUCTIVE_PATTERNS = [
-    r"rm\s+-[a-z]*r[a-z]*f|rm\s+-[a-z]*f[a-z]*r",  # rm -rf / -fr, any flag order
-    r"\bmkfs\b",
-    r"\bdd\s+if=",
+# Fork bombs and pipe-to-shell installers are inherently about shell syntax
+# (subshell/pipe metacharacters) rather than a single command's argv, so
+# they stay regex-based. rm/mkfs/dd are matched on parsed argv instead (see
+# _is_destructive_line) because a raw-string regex here is trivially bypassed
+# by shell quoting (`r\m -rf /`, `rm '-rf' /`) or flag reordering
+# (`rm -r -f /`, `rm --recursive --force /`).
+_DESTRUCTIVE_SYNTAX_PATTERNS = [
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;\s*:",  # fork bomb
     r"curl[^|]*\|\s*(sh|bash)\b",
     r"wget[^|]*\|\s*(sh|bash)\b",
@@ -39,6 +43,57 @@ _CREDENTIAL_EXFIL_PATTERNS = [
     r"(curl|wget|nc)\b.*\$(AWS_[A-Z_]+|KUBECONFIG)",
     r"cat\s+.*kube/config.*(curl|nc)",
 ]
+
+
+def _flags(tokens: list[str]) -> list[str]:
+    # Tokens up to (not including) a bare "--" end-of-options marker, so
+    # `rm -- --recursive --force` (real filenames, not flags) isn't flagged.
+    if "--" in tokens:
+        return tokens[: tokens.index("--")]
+    return tokens
+
+
+def _has_flag(tokens: list[str], short: str, long_name: str) -> bool:
+    # Checks parsed argv tokens, not the raw string, so quoting/escaping
+    # ("-r -f", "'-rf'") can't hide a flag the shell would still honor.
+    for t in tokens:
+        if t == long_name:
+            return True
+        if t.startswith("-") and not t.startswith("--") and short.lower() in t.lower():
+            return True
+    return False
+
+
+def _is_destructive_line(line: str) -> bool:
+    """Token-aware rm/mkfs/dd check for a single shell line.
+
+    Uses shlex so quoting/escaping that a POSIX shell would resolve to a
+    plain `rm -rf` (or `mkfs`, `dd`) can't hide the command from a
+    raw-string regex. Doesn't see chaining/substitution within the line
+    (`;`, `&&`, `$()`, pipes) — that's covered by _DESTRUCTIVE_SYNTAX_PATTERNS
+    for the specific patterns above, not a general shell parse.
+    """
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        return True  # unparseable quoting - fail safe, treat as destructive
+    if not tokens:
+        return False
+    exe = os.path.basename(tokens[0])  # strips a path prefix like /bin/rm
+    args = _flags(tokens[1:])
+    if exe == "rm":
+        return _has_flag(args, "r", "--recursive") and _has_flag(args, "f", "--force")
+    if exe == "mkfs" or exe.startswith("mkfs."):
+        return True
+    if exe == "dd":
+        return any(t.startswith("if=") for t in tokens[1:])  # order-independent
+    return False
+
+
+def _is_destructive_text(text: str) -> bool:
+    if any(re.search(p, text, re.IGNORECASE) for p in _DESTRUCTIVE_SYNTAX_PATTERNS):
+        return True
+    return any(_is_destructive_line(line) for line in text.splitlines())
 
 
 def _classify_command(command: str, script_content: str = "") -> str:
@@ -57,7 +112,7 @@ def _classify_command(command: str, script_content: str = "") -> str:
     into a spurious cross-boundary match.
     """
     texts = (command, script_content)
-    if any(re.search(p, t, re.IGNORECASE) for p in _DESTRUCTIVE_PATTERNS for t in texts):
+    if any(_is_destructive_text(t) for t in texts):
         return "destructive"
     if any(re.search(p, t, re.IGNORECASE) for p in _CREDENTIAL_EXFIL_PATTERNS for t in texts):
         return "credential_exfil"
