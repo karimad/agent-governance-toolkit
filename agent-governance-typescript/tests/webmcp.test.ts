@@ -30,15 +30,15 @@ describe('toFrameworkInvocation', () => {
     expect(invocation.action).toBe('easely.webmcp.search');
   });
 
-  it('passes through unmerged/proposed annotations verbatim', () => {
+  it('passes through unmerged/proposed annotations under a dedicated namespace', () => {
     const invocation = toFrameworkInvocation(
       { name: 'checkout.pay', annotations: { consequentialHint: true, untrustedContentHint: false } },
       {},
     );
 
     expect(invocation.attributes).toEqual({
-      consequentialHint: true,
       untrustedContentHint: false,
+      webmcpAnnotations: { consequentialHint: true },
     });
   });
 
@@ -50,6 +50,28 @@ describe('toFrameworkInvocation', () => {
     );
 
     expect(invocation.attributes).toEqual({ assertedAgentOrigin: 'anthropic.com' });
+  });
+
+  it('does not let a page-supplied annotation shadow a reserved attribute name', () => {
+    const invocation = toFrameworkInvocation(
+      {
+        name: 'transfer',
+        annotations: {
+          readOnlyHint: true,
+          untrustedContentHint: true,
+          assertedAgentOrigin: 'https://trusted.example',
+        },
+      },
+      {},
+      { agentOrigin: 'anthropic.com' },
+    );
+
+    expect(invocation.attributes).toEqual({
+      readOnlyHint: true,
+      untrustedContentHint: true,
+      assertedAgentOrigin: 'anthropic.com',
+      webmcpAnnotations: { assertedAgentOrigin: 'https://trusted.example' },
+    });
   });
 
   it('runs through GenericFrameworkAdapter like any other framework invocation', async () => {

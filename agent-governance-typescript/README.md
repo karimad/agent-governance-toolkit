@@ -374,7 +374,7 @@ const invocation = toFrameworkInvocation(
 const result = await adapter.run(invocation, async () => createDraft());
 ```
 
-Only the two annotations merged into the WebMCP spec today (`readOnlyHint`, `untrustedContentHint`) are read explicitly; any other annotation (including proposed-but-unmerged hints like `consequentialHint`, [webmachinelearning/webmcp#217](https://github.com/webmachinelearning/webmcp/issues/217)) is passed through verbatim as an attribute. See `examples/webmcp-tool-governance.ts` for a full example.
+Only the two annotations merged into the WebMCP spec today (`readOnlyHint`, `untrustedContentHint`) are read explicitly; any other annotation (including proposed-but-unmerged hints like `consequentialHint`, [webmachinelearning/webmcp#217](https://github.com/webmachinelearning/webmcp/issues/217)) is passed through under `attributes.webmcpAnnotations`, namespaced so a page-supplied annotation name can never shadow a reserved attribute such as `assertedAgentOrigin`. See `examples/webmcp-tool-governance.ts` for a full example.
 
 ## Development
 

@@ -17,10 +17,14 @@
 //
 // Only the two annotations that are merged into the WebMCP spec today
 // (`readOnlyHint`, `untrustedContentHint`) are read explicitly. Anything
-// else on `annotations` is passed through verbatim as an attribute so
-// callers can act on proposed-but-unmerged hints (e.g. `consequentialHint`,
+// else on `annotations` is passed through under `attributes.webmcpAnnotations`
+// so callers can act on proposed-but-unmerged hints (e.g. `consequentialHint`,
 // webmachinelearning/webmcp#217) without this module hard-coding a shape
-// that hasn't landed yet.
+// that hasn't landed yet. It is namespaced rather than flattened onto
+// `attributes` directly so that a page-supplied annotation name can never
+// collide with (and shadow) a reserved attribute name such as
+// `assertedAgentOrigin` -- annotations come from the same untrusted page
+// as the tool call itself.
 
 import { FrameworkInvocation } from './framework-adapter';
 
@@ -61,10 +65,11 @@ export function toFrameworkInvocation(
   const actionPrefix = options.actionPrefix ?? 'webmcp';
   const { readOnlyHint, untrustedContentHint, ...restAnnotations } = tool.annotations ?? {};
 
-  const attributes: Record<string, unknown> = { ...restAnnotations };
+  const attributes: Record<string, unknown> = {};
   if (readOnlyHint !== undefined) attributes.readOnlyHint = readOnlyHint;
   if (untrustedContentHint !== undefined) attributes.untrustedContentHint = untrustedContentHint;
   if (client?.agentOrigin !== undefined) attributes.assertedAgentOrigin = client.agentOrigin;
+  if (Object.keys(restAnnotations).length > 0) attributes.webmcpAnnotations = restAnnotations;
 
   return {
     name: tool.name,
