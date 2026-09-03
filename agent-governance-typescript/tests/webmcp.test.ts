@@ -46,10 +46,10 @@ describe('toFrameworkInvocation', () => {
     const invocation = toFrameworkInvocation(
       { name: 'checkout.pay' },
       {},
-      { agentOrigin: 'anthropic.com' },
+      { agentOrigin: 'google.com' },
     );
 
-    expect(invocation.attributes).toEqual({ assertedAgentOrigin: 'anthropic.com' });
+    expect(invocation.attributes).toEqual({ assertedAgentOrigin: 'google.com' });
   });
 
   it('does not let a page-supplied annotation shadow a reserved attribute name', () => {
@@ -63,13 +63,13 @@ describe('toFrameworkInvocation', () => {
         },
       },
       {},
-      { agentOrigin: 'anthropic.com' },
+      { agentOrigin: 'google.com' },
     );
 
     expect(invocation.attributes).toEqual({
       readOnlyHint: true,
       untrustedContentHint: true,
-      assertedAgentOrigin: 'anthropic.com',
+      assertedAgentOrigin: 'google.com',
       webmcpAnnotations: { assertedAgentOrigin: 'https://trusted.example' },
     });
   });
