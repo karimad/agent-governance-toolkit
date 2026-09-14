@@ -31,8 +31,8 @@ POLICY_PATH = Path(__file__).resolve().parent / "policy.yaml"
 # Fork bombs and pipe-to-shell installers are inherently about shell syntax
 # (subshell/pipe metacharacters) rather than a single command's argv, so
 # they stay regex-based. rm/mkfs/dd are matched on parsed argv instead (see
-# _is_destructive_line) because a raw-string regex here is trivially bypassed
-# by shell quoting (`r\m -rf /`, `rm '-rf' /`) or flag reordering
+# _is_destructive_segment) because a raw-string regex here is trivially
+# bypassed by shell quoting (`r\m -rf /`, `rm '-rf' /`) or flag reordering
 # (`rm -r -f /`, `rm --recursive --force /`).
 _DESTRUCTIVE_SYNTAX_PATTERNS = [
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;\s*:",  # fork bomb
@@ -43,6 +43,13 @@ _CREDENTIAL_EXFIL_PATTERNS = [
     r"(curl|wget|nc)\b.*\$(AWS_[A-Z_]+|KUBECONFIG)",
     r"cat\s+.*kube/config.*(curl|nc)",
 ]
+# sudo flags that consume the following token as their own argument (not the
+# start of the wrapped command), e.g. `sudo -u root rm -rf /` must still
+# resolve to `rm -rf /` rather than stopping at the "root" token.
+_SUDO_FLAGS_WITH_ARG = {"-u", "-g", "-h", "-p", "-U", "-r", "-t", "-C", "-a", "-T"}
+# $(...) / `...` command substitution, one level of nesting - good enough to
+# pull `rm -rf /` out of `$(rm -rf /)` without a full shell parser.
+_SUBSHELL_PATTERN = re.compile(r"\$\(([^$()]*)\)|`([^`]*)`")
 
 
 def _flags(tokens: list[str]) -> list[str]:
@@ -64,19 +71,73 @@ def _has_flag(tokens: list[str], short: str, long_name: str) -> bool:
     return False
 
 
-def _is_destructive_line(line: str) -> bool:
-    """Token-aware rm/mkfs/dd check for a single shell line.
+def _extract_subshells(text: str) -> list[str]:
+    found = []
+    for m in _SUBSHELL_PATTERN.finditer(text):
+        inner = m.group(1) if m.group(1) is not None else m.group(2)
+        found.append(inner)
+        found.extend(_extract_subshells(inner))  # nested $(...) inside a substitution
+    return found
+
+
+def _line_segments(line: str) -> list[list[str]] | None:
+    """Tokenizes a shell line and splits it into command segments on `;`,
+    `&&`, `||`, `&` and `|`, so each chained/piped command is checked on its
+    own instead of only the first one on the line. Returns None if the line
+    can't be tokenized (fail-safe: caller treats it as destructive).
+    """
+    try:
+        lexer = shlex.shlex(line, posix=True, punctuation_chars="|&;")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for tok in tokens:
+        if tok and set(tok) <= set("|&;"):
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(tok)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _strip_wrapper(tokens: list[str]) -> list[str]:
+    """Strips `sudo`/`env`/`xargs` wrapper prefixes (and their own flags or
+    env-var assignments) so e.g. `sudo rm -rf /` and `env rm -rf /` resolve
+    to the same argv as `rm -rf /` for the checks below.
+    """
+    while tokens:
+        exe = os.path.basename(tokens[0])
+        if exe in ("sudo", "xargs"):
+            tokens = tokens[1:]
+            while tokens and tokens[0].startswith("-"):
+                flag = tokens[0]
+                tokens = tokens[1:]
+                if flag in _SUDO_FLAGS_WITH_ARG and tokens:
+                    tokens = tokens[1:]
+            continue
+        if exe == "env":
+            tokens = tokens[1:]
+            while tokens and (tokens[0].startswith("-") or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0])):
+                tokens = tokens[1:]
+            continue
+        break
+    return tokens
+
+
+def _is_destructive_segment(tokens: list[str]) -> bool:
+    """Token-aware rm/mkfs/dd check for a single (already-split) command segment.
 
     Uses shlex so quoting/escaping that a POSIX shell would resolve to a
     plain `rm -rf` (or `mkfs`, `dd`) can't hide the command from a
-    raw-string regex. Doesn't see chaining/substitution within the line
-    (`;`, `&&`, `$()`, pipes) — that's covered by _DESTRUCTIVE_SYNTAX_PATTERNS
-    for the specific patterns above, not a general shell parse.
+    raw-string regex.
     """
-    try:
-        tokens = shlex.split(line)
-    except ValueError:
-        return True  # unparseable quoting - fail safe, treat as destructive
+    tokens = _strip_wrapper(tokens)
     if not tokens:
         return False
     exe = os.path.basename(tokens[0])  # strips a path prefix like /bin/rm
@@ -93,7 +154,16 @@ def _is_destructive_line(line: str) -> bool:
 def _is_destructive_text(text: str) -> bool:
     if any(re.search(p, text, re.IGNORECASE) for p in _DESTRUCTIVE_SYNTAX_PATTERNS):
         return True
-    return any(_is_destructive_line(line) for line in text.splitlines())
+    lines = list(text.splitlines())
+    for line in list(lines):
+        lines.extend(_extract_subshells(line))  # also check inside $(...) / `...`
+    for line in lines:
+        segments = _line_segments(line)
+        if segments is None:
+            return True  # unparseable quoting - fail safe, treat as destructive
+        if any(_is_destructive_segment(segment) for segment in segments):
+            return True
+    return False
 
 
 def _classify_command(command: str, script_content: str = "") -> str:
