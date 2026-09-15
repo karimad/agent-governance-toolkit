@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
 """Upload and run a local script inside a kubernetes-sigs/agent-sandbox pod,
 with every command policy-checked by AGT before it is dispatched.
 

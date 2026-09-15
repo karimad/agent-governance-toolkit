@@ -1163,5 +1163,15 @@ zerotrie
 zerovec
 zmij
 zoneinfo
+warmpool
+sandboxwarmpool
+sandboxtemplate
+KUBECONFIG
+subshell
+subshells
+nohup
+doas
+redirections
+karimad
 رقم
 قومي
