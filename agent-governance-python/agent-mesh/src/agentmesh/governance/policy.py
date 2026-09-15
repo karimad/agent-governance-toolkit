@@ -21,6 +21,7 @@ import warnings
 import yaml
 import json
 import re
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -141,14 +142,19 @@ class PolicyRule(BaseModel):
         - ``action.type == 'export'``
         - ``data.contains_pii``
         - ``user.role in ['admin', 'operator']``
+        - ``action.path contains '..'``
+        - ``action.tool startswith 'delete_'``
+        - ``resource.name endswith '.pem'``
 
         Args:
             context: Dictionary of runtime values the condition is
                 evaluated against. Keys are accessed via dot notation.
 
         Returns:
-            ``True`` if the rule is enabled and the condition matches,
-            ``False`` otherwise (including on evaluation errors).
+            ``True`` if the rule is enabled and the condition matches.
+            On a guard trip or evaluation error, returns ``True`` for
+            non-``allow`` actions (fail-closed) and ``False`` for
+            ``allow`` actions (fail-open); otherwise ``False``.
         """
         if not self.enabled:
             return False
@@ -161,24 +167,47 @@ class PolicyRule(BaseModel):
             # V27: Fail-closed — treat evaluation errors as a match so
             # the rule's action (typically "deny") takes effect. This
             # prevents attackers from crafting inputs that trigger
-            # exceptions to bypass policy rules.
+            # exceptions to bypass policy rules. An "allow" rule failing
+            # open here would grant access instead, so it doesn't match.
+            match = self.action != "allow"
             logger.warning(
-                "Policy rule evaluation error for '%s' — treating as MATCH (fail-closed)",
+                "Policy rule evaluation error for '%s' — treating as %s (fail-closed)",
                 self.name,
+                "MATCH" if match else "NO-MATCH",
                 exc_info=True,
             )
-            return True
+            return match
 
     # Maximum recursion depth for compound expressions to prevent DoS
     _MAX_EXPRESSION_DEPTH = 20
 
     def _eval_expression(self, expr: str, context: dict, _depth: int = 0) -> bool:
         """Evaluate a simple expression."""
+        # Trailing whitespace would otherwise push a valid condition into
+        # the anchored regexes' unrecognized-syntax fallback.
+        expr = expr.strip()
+
+        # Non-allow rules fail closed on a guard trip; an allow rule
+        # failing open would grant access instead of denying it.
         if _depth > self._MAX_EXPRESSION_DEPTH:
-            return False  # fail-closed on excessive nesting
+            match = self.action != "allow"
+            logger.warning(
+                "Policy rule '%s': expression exceeded max depth %d — treating as %s",
+                self.name,
+                self._MAX_EXPRESSION_DEPTH,
+                "MATCH" if match else "NO-MATCH",
+            )
+            return match
 
         if len(expr) > 2000:
-            return False  # reject oversized expressions
+            match = self.action != "allow"
+            logger.warning(
+                "Policy rule '%s': expression length %d exceeds 2000-char limit — treating as %s",
+                self.name,
+                len(expr),
+                "MATCH" if match else "NO-MATCH",
+            )
+            return match
 
         # Handle compound conditions first (AND/OR)
         # This must be checked before individual conditions
@@ -196,37 +225,139 @@ class PolicyRule(BaseModel):
         # Now handle atomic conditions
 
         # Equality: action.type == 'export'
-        eq_match = re.match(r"(\w+(?:\.\w+)*)\s*==\s*['\"]([^'\"]+)['\"]", expr)
+        eq_match = re.match(r"(\w+(?:\.\w+)*)\s*==\s*(['\"])([^'\"]+)\2$", expr)
         if eq_match:
-            path, value = eq_match.groups()
+            path, _quote, value = eq_match.groups()
             actual = self._get_nested(context, path)
             return actual == value
 
         # Inequality: action.type != 'export'
-        neq_match = re.match(r"(\w+(?:\.\w+)*)\s*!=\s*['\"]([^'\"]+)['\"]", expr)
+        neq_match = re.match(r"(\w+(?:\.\w+)*)\s*!=\s*(['\"])([^'\"]+)\2$", expr)
         if neq_match:
-            path, value = neq_match.groups()
+            path, _quote, value = neq_match.groups()
             actual = self._get_nested(context, path)
+            if actual is None:
+                # A missing field is not evidence of inequality: `x != 'v'`
+                # must not match an allow rule just because x was never set.
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' is absent, '!=' cannot match — treating as %s",
+                    self.name,
+                    path,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
+            if not isinstance(actual, str):
+                # Non-string values always compare unequal to a string
+                # literal, which would falsely satisfy '!=' on malformed evidence.
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' resolved to non-string %s, "
+                    "'!=' cannot match — treating as %s",
+                    self.name,
+                    path,
+                    type(actual).__name__,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
             return actual != value
 
         # Membership: field in ['a', 'b', 'c']
-        in_match = re.match(
-            r"(\w+(?:\.\w+)*)\s+in\s+\[([^\]]*)\]", expr
-        )
+        in_match = re.match(r"(\w+(?:\.\w+)*)\s+in\s+\[([^\]]*)\]$", expr)
         if in_match:
             path, items_str = in_match.groups()
             actual = self._get_nested(context, path)
             items = [s.strip().strip("'\"") for s in items_str.split(",") if s.strip()]
             return actual in items
 
+        # String containment: field contains 'substring'
+        contains_match = re.match(r"(\w+(?:\.\w+)*)\s+contains\s+(['\"])([^'\"]+)\2$", expr)
+        if contains_match:
+            path, _quote, needle = contains_match.groups()
+            actual = self._get_nested(context, path)
+            if not isinstance(actual, str):
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' resolved to non-string %s, "
+                    "'contains' cannot match — treating as %s",
+                    self.name,
+                    path,
+                    type(actual).__name__,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
+            return needle in actual
+
+        # String prefix: field startswith 'prefix'
+        startswith_match = re.match(r"(\w+(?:\.\w+)*)\s+startswith\s+(['\"])([^'\"]+)\2$", expr)
+        if startswith_match:
+            path, _quote, prefix = startswith_match.groups()
+            actual = self._get_nested(context, path)
+            if not isinstance(actual, str):
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' resolved to non-string %s, "
+                    "'startswith' cannot match — treating as %s",
+                    self.name,
+                    path,
+                    type(actual).__name__,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
+            return actual.startswith(prefix)
+
+        # String suffix: field endswith 'suffix'
+        endswith_match = re.match(r"(\w+(?:\.\w+)*)\s+endswith\s+(['\"])([^'\"]+)\2$", expr)
+        if endswith_match:
+            path, _quote, suffix = endswith_match.groups()
+            actual = self._get_nested(context, path)
+            if not isinstance(actual, str):
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' resolved to non-string %s, "
+                    "'endswith' cannot match — treating as %s",
+                    self.name,
+                    path,
+                    type(actual).__name__,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
+            return actual.endswith(suffix)
+
         # Comparison: field > number
-        cmp_match = re.match(r"(\w+(?:\.\w+)*)\s*(>=|<=|>|<)\s*(\d+(?:\.\d+)?)", expr)
+        cmp_match = re.match(r"(\w+(?:\.\w+)*)\s*(>=|<=|>|<)\s*(\d+(?:\.\d+)?)$", expr)
         if cmp_match:
             path, op, num_str = cmp_match.groups()
             actual = self._get_nested(context, path)
+            if actual is None:
+                # Missing evidence must not be coerced to 0 -- that would
+                # let e.g. `action.cost < 10` match an allow rule with no
+                # cost recorded at all.
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' is absent, numeric comparison cannot "
+                    "match — treating as %s",
+                    self.name,
+                    path,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
             try:
-                actual_num = float(actual) if actual is not None else 0
+                actual_num = float(actual)
                 target = float(num_str)
+                if not (math.isfinite(actual_num) and math.isfinite(target)):
+                    # NaN/inf parse fine but every ordered comparison against
+                    # them is False, silently failing open a deny rule.
+                    match = self.action != "allow"
+                    logger.warning(
+                        "Policy rule '%s': '%s' is non-finite (%r), comparison "
+                        "cannot match — treating as %s",
+                        self.name,
+                        path,
+                        actual,
+                        "MATCH" if match else "NO-MATCH",
+                    )
+                    return match
                 if op == ">":
                     return actual_num > target
                 if op == "<":
@@ -236,7 +367,15 @@ class PolicyRule(BaseModel):
                 if op == "<=":
                     return actual_num <= target
             except (TypeError, ValueError):
-                return False
+                match = self.action != "allow"
+                logger.warning(
+                    "Policy rule '%s': '%s' is not numeric, comparison cannot "
+                    "match — treating as %s",
+                    self.name,
+                    path,
+                    "MATCH" if match else "NO-MATCH",
+                )
+                return match
 
         # Boolean attribute: data.contains_pii
         bool_match = re.match(r"^(\w+(?:\.\w+)*)$", expr)
@@ -244,7 +383,17 @@ class PolicyRule(BaseModel):
             path = bool_match.group(1)
             return bool(self._get_nested(context, path))
 
-        return False
+        # Unrecognized syntax (unknown operator, typo, malformed expression):
+        # fail closed for non-allow rules so a malformed deny rule doesn't
+        # silently disable itself; an allow rule must not match on garbage.
+        match = self.action != "allow"
+        logger.warning(
+            "Policy rule '%s': unrecognized condition syntax %r — treating as %s",
+            self.name,
+            expr,
+            "MATCH" if match else "NO-MATCH",
+        )
+        return match
 
     def _get_nested(self, obj: dict, path: str) -> Any:
         """Get nested value from dict using dot notation."""
