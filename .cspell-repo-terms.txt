@@ -26,11 +26,13 @@ struction
 # Egypt PDPL regex fragments (word stems used in pattern matching)
 # Fictitious order-reference prefix used in a Ghana Card regex regression test
 # Ghana
+# GitHub handle, credited in docs/dependency-audits/2026-08-12-agent-governance-sdk-5-cli-packages.md
 # Mauritius (no new abbreviations beyond PDPC)
 # Rwanda
 # Shared currency / country codes used in messages
 # Test name in the TypeScript approval-protocol suite (#3200)
 # URL hostnames in policy file references
+# YAML ordered-map tag (!!omap), cited in dependency audits
 # discarded-verdict census (tests/test_transform_never_dropped.py)
 # dorny/paths-filter — GitHub Actions dependency used in policy-validation.yml
 # git fetch destination-ref syntax, spell-check.yml base fetch
@@ -530,6 +532,7 @@ fromlist
 fromtimestamp
 frontmatter
 frozenset
+fsencode
 fullmatch
 gazetted
 gemini
@@ -743,6 +746,7 @@ noresolver
 normalisation
 normalised
 normalises
+normcase
 normpath
 nostr
 nother
@@ -759,6 +763,7 @@ octo
 octocat
 offence
 offences
+omap
 omitempty
 oncall
 oneshot
@@ -809,6 +814,7 @@ popitem
 popleft
 posixpath
 posonlyargs
+prayagupa
 preimage
 prependpath
 pretool
@@ -1007,6 +1013,7 @@ typeerror
 typer
 typosquat
 typosquats
+udcff
 tzdata
 ufeff
 unaliased
@@ -1015,6 +1022,7 @@ unconfigured
 unicodedata
 uninspectable
 unioned
+unkeyed
 unmigrated
 unparse
 unparseable
@@ -1066,6 +1074,68 @@ workflows
 workiq
 workstream
 worktree
+
+# --- African regulatory policy terms ---
+POPIA
+popia
+NDPA
+ndpa
+NFIU
+nfiu
+CBN
+BVN
+NIN
+NIMC
+nimc
+vnin
+vNIN
+NIBSS
+nibss
+tokenised
+Anambra
+Kogi
+crossborder
+crossstate
+offence
+authorisation
+authorised
+geofencing
+geofence
+geomatch
+YYMMDDGSSSCAZ
+
+# --- TRACE / identity-chain / advisory terms ---
+agentrust
+contextvars
+miyannishar
+GHSA
+ghsa
+
+# --- ACS / crypto terms ---
+preimage
+
+# --- Flowise integration terms ---
+chatflow
+Chatflows
+
+# --- Test code terms ---
+interp
+ncat
+netcat
+socat
+nmap
+tcpdump
+filterwarnings
+simplefilter
+subn
+
+# --- Azure credential pattern terms (used in credential_redactor regexes) ---
+accountkey
+sharedaccesssignature
+sharedaccesskey
+
+isascii
+multisink
 writeln
 writerow
 wslc
