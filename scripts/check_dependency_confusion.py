@@ -63,9 +63,6 @@ REGISTERED_PACKAGES = {
     "agt-policies", "agt_policies",
     "agent-control-specification", "agent_control_specification",
     "acs-generator", "acs_generator",
-    # kubernetes-sigs/agent-sandbox client library — real package on PyPI
-    # (https://pypi.org/project/k8s-agent-sandbox/), used by the
-    # examples/k8s-agent-sandbox-governed example.
     "k8s-agent-sandbox", "k8s_agent_sandbox",
     # Common dependencies
     "pydantic", "pyyaml", "cryptography", "pynacl", "httpx", "aiohttp",
