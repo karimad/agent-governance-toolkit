@@ -30,14 +30,28 @@ POLICY_PATH = Path(__file__).resolve().parent / "policy.yaml"
 
 # Fork bombs and pipe-to-shell installers are inherently about shell syntax
 # (subshell/pipe metacharacters) rather than a single command's argv, so
-# they stay regex-based. rm/mkfs/dd are matched on parsed argv instead (see
-# _is_destructive_segment) because a raw-string regex here is trivially
-# bypassed by shell quoting (`r\m -rf /`, `rm '-rf' /`) or flag reordering
-# (`rm -r -f /`, `rm --recursive --force /`).
+# they stay regex-based.
+#
+# rm/mkfs/dd are ALSO matched here on raw text, as a second layer alongside
+# the parsed-argv check in _is_destructive_segment. The argv check resolves
+# quoting/flag-reordering bypasses (`r\m -rf /`, `rm '-rf' /`, `rm -r -f /`)
+# that a raw regex would miss, but it only ever sees a single already-split
+# command segment - it can't see through every shape a shell can wrap that
+# segment in (env-var prefixes, `nohup`/`timeout`/`exec`/`eval`/`busybox`/
+# `doas`, `su -c '...'`, `bash -c '...'`, subshells `(...)`, brace groups
+# `{ ...; }`, `if`/`for`/function bodies, `find -exec ... +`, redirections
+# before the command, a leading `!`, or the command showing up inside a
+# script body's `os.system(...)`/`subprocess.run(..., shell=True)` string
+# rather than as shell syntax at all). A raw substring match on the command
+# name and its flags catches all of those without needing to parse each
+# wrapper's own grammar - `\b` boundaries keep `transform -rf foo` benign.
 _DESTRUCTIVE_SYNTAX_PATTERNS = [
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;\s*:",  # fork bomb
     r"curl[^|]*\|\s*(sh|bash)\b",
     r"wget[^|]*\|\s*(sh|bash)\b",
+    r"\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r",
+    r"\bmkfs\b",
+    r"\bdd\s+if=",
 ]
 _CREDENTIAL_EXFIL_PATTERNS = [
     r"(curl|wget|nc)\b.*\$(AWS_[A-Z_]+|KUBECONFIG)",
@@ -152,6 +166,10 @@ def _is_destructive_segment(tokens: list[str]) -> bool:
 
 
 def _is_destructive_text(text: str) -> bool:
+    # Raw-text layer first (see _DESTRUCTIVE_SYNTAX_PATTERNS) - catches
+    # wrapper/eval/subshell/redirection shapes the segment/argv layer below
+    # can't see through, and also fires on script bodies where the command
+    # is embedded in another language's string literal (e.g. os.system(...)).
     if any(re.search(p, text, re.IGNORECASE) for p in _DESTRUCTIVE_SYNTAX_PATTERNS):
         return True
     lines = list(text.splitlines())

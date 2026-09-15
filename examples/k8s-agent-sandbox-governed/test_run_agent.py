@@ -34,7 +34,7 @@ CHAINING_AND_WRAPPER_BYPASSES = [
     "echo hi | xargs rm -rf",
 ]
 
-# Quoting/escaping/reordering bypasses fixed in 4fd1632 - must keep working.
+# Quoting/escaping/reordering bypasses fixed in 0fb83f96 - must keep working.
 QUOTING_AND_FLAG_BYPASSES = [
     "rm -r -f /",
     "rm --recursive --force /",
@@ -42,6 +42,41 @@ QUOTING_AND_FLAG_BYPASSES = [
     "rm '-rf' /",
     "mkfs.ext4 /dev/sda1",
     "dd of=/dev/sda if=/dev/zero",
+]
+
+# Wrapper/eval/subshell/redirection shapes that defeat argv-segment parsing
+# entirely (no amount of chaining-segmentation exposes the real command),
+# caught instead by the raw-text _DESTRUCTIVE_SYNTAX_PATTERNS layer.
+RAW_TEXT_LAYER_BYPASSES = [
+    "X=1 rm -rf /",
+    "nohup rm -rf /",
+    "timeout 5 rm -rf /",
+    "exec rm -rf /",
+    "eval 'rm -rf /'",
+    "busybox rm -rf /",
+    "doas rm -rf /",
+    "su -c 'rm -rf /'",
+    "sudo --user root rm -rf /",
+    "xargs -I {} rm -rf {}",
+    "xargs -n 1 rm -rf",
+    "env -u FOO rm -rf /",
+    ">/dev/null rm -rf /",
+    "2>&1 rm -rf /",
+    "! rm -rf /",
+    "bash -c 'rm -rf /'",
+    'sh -c "rm -rf /"',
+    "echo 'rm -rf /' | sh",
+    "( rm -rf / )",
+    "{ rm -rf /; }",
+    "if true; then rm -rf /; fi",
+    "for f in a; do rm -rf $f; done",
+    "f() { rm -rf /; }; f",
+    "find / -exec rm -rf {} +",
+    "$( (rm -rf /) )",
+    "$(rm -rf $(echo /))",
+    "bash -c 'mkfs.ext4 /dev/sda1'",
+    "X=1 dd if=/dev/zero of=/dev/sda",
+    "import os\nos.system('rm -rf /')",
 ]
 
 BENIGN_COMMANDS = [
@@ -60,6 +95,11 @@ def test_classifies_chaining_and_wrapper_bypasses_as_destructive(command: str) -
 
 @pytest.mark.parametrize("command", QUOTING_AND_FLAG_BYPASSES)
 def test_classifies_quoting_and_flag_bypasses_as_destructive(command: str) -> None:
+    assert MODULE._classify_command(command) == "destructive"
+
+
+@pytest.mark.parametrize("command", RAW_TEXT_LAYER_BYPASSES)
+def test_classifies_raw_text_layer_bypasses_as_destructive(command: str) -> None:
     assert MODULE._classify_command(command) == "destructive"
 
 
