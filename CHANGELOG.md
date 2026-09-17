@@ -31,7 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `agent-control-specification>=0.4.0b0`) had become a base dependency, blocking
   `pip install`. Moved `agt-policies` to an opt-in `migrate` extra (only the
   `agt migrate` CLI needs it), and made `agent-control-specification` a direct
-  base dependency instead, since `agent_os` imports it directly.
+  base dependency instead, since `agent_os` imports it directly. The
+  `migrate` extra's own `agt-policies` pin is unchanged and still
+  unresolvable until a compatible release exists — tracked in #4019.
 - **Spell check no longer reports the base branch's own history as a
   contributor's changes** — `scripts/ci/changed_lines.py` diffed from the tip of
   the base branch, so on a branch behind `main` every line `main` had since

@@ -104,6 +104,8 @@ grpc = [
 ]
 
 # agt-policies backs only the `agt migrate` CLI; the govern() runtime doesn't import it.
+# This pin is currently unresolvable on its own (agt-policies>=5.1.0 isn't published,
+# and will need an ACS range wider than the base pin above once it is) — see #4019.
 migrate = [
     "agt-policies>=5.1.0,<6.0",
 ]
