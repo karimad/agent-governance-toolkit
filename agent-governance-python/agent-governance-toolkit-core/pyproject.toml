@@ -38,7 +38,15 @@ classifiers = [
 
 # Merged dependencies from agent-os-kernel, agentmesh-primitives,
 # agentmesh-runtime, agent-hypervisor, and agentmesh-platform.
+#
+# agent-control-specification is declared directly here because agent_os
+# (force-included below) imports it in providers.py, cmd_validate.py,
+# _native_adapter_runtime.py, and openai_agents_sdk.py. It used to arrive only
+# transitively through agt-policies; pinning it here keeps those imports
+# working independent of whether agt-policies (an unrelated CLI's dependency,
+# see the migrate extra) is installed.
 dependencies = [
+    "agent-control-specification>=0.3.1b0,<0.4.0",
     "pydantic[email]>=2.5.0,<3.0",
     "pyyaml>=6.0,<7.0",
     "rich>=13.0.0,<16.0",
@@ -99,14 +107,14 @@ grpc = [
     "grpcio-tools>=1.60.0,<2.0",
 ]
 
-# --- Bundles ---
-full = [
-    "agent-governance-toolkit-core[cmvk,iatp,amb,observability,mcp,nexus,api,otel,server,storage]",
-]
-
 # agt-policies backs only the `agt migrate` CLI; the govern() runtime doesn't import it.
 migrate = [
     "agt-policies>=5.1.0,<6.0",
+]
+
+# --- Bundles ---
+full = [
+    "agent-governance-toolkit-core[cmvk,iatp,amb,observability,mcp,nexus,api,otel,server,storage]",
 ]
 
 dev = [
