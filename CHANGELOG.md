@@ -29,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`agent-governance-toolkit-core` and `[full]` install again without an
   unpublished transitive pin.** `agt-policies>=5.1.0` (requiring an unpublished
   `agent-control-specification>=0.4.0b0`) had become a base dependency, blocking
-  `pip install`. Moved `agt-policies` to an opt-in `migrate` extra (only the
-  `agt migrate` CLI needs it), and made `agent-control-specification` a direct
+  `pip install`. Moved `agt-policies` to an opt-in `migrate` extra — existing
+  `agt migrate` users now need `pip install agent-governance-toolkit-core[migrate]`
+  — and made `agent-control-specification` a direct
   base dependency instead, since `agent_os` imports it directly. The
   `migrate` extra's own `agt-policies` pin is unchanged and still
   unresolvable until a compatible release exists — tracked in #4019.
