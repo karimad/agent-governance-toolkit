@@ -42,7 +42,7 @@ classifiers = [
 # agent-control-specification is declared directly: agent_os (force-included
 # below) imports it, and it previously arrived only transitively via agt-policies.
 dependencies = [
-    "agent-control-specification>=0.3.1b0,<0.4.0",
+    "agent-control-specification>=0.4.0b0,<0.5.0",
     "pydantic[email]>=2.5.0,<3.0",
     "pyyaml>=6.0,<7.0",
     "rich>=13.0.0,<16.0",

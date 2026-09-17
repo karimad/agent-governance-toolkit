@@ -26,15 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **.NET numeric equality/inequality in policy-rule conditions** — `PolicyRule` conditions such as `count == 5` and `score != 3.14` now evaluate numeric literals (integers, decimals, and negatives) instead of failing to match, and numeric `!=` matches when the field is missing or non-numeric so deny rules fail closed. Numeric operands are parsed with the invariant culture so evaluation is deterministic across host locales (#3205).
-- **`agent-governance-toolkit-core` and `[full]` install again without an
-  unpublished transitive pin.** `agt-policies>=5.1.0` (requiring an unpublished
+- **`agent-governance-toolkit-core` and `[full]` no longer require `agt-policies`
+  as a base dependency.** `agt-policies>=5.1.0` (requiring an unpublished
   `agent-control-specification>=0.4.0b0`) had become a base dependency, blocking
   `pip install`. Moved `agt-policies` to an opt-in `migrate` extra — existing
   `agt migrate` users now need `pip install agent-governance-toolkit-core[migrate]`
-  — and made `agent-control-specification` a direct
-  base dependency instead, since `agent_os` imports it directly. The
-  `migrate` extra's own `agt-policies` pin is unchanged and still
-  unresolvable until a compatible release exists — tracked in #4019.
+  — and made `agent-control-specification>=0.4.0b0,<0.5.0` a direct base
+  dependency instead, matching the version `agent_os` actually requires. A
+  resolvable PyPI install of `agent-governance-toolkit-core` still depends on
+  `agent-control-specification` 0.4.0b0 and `agt-policies` 5.1.0 being
+  published — tracked in #4019.
 - **Spell check no longer reports the base branch's own history as a
   contributor's changes** — `scripts/ci/changed_lines.py` diffed from the tip of
   the base branch, so on a branch behind `main` every line `main` had since
