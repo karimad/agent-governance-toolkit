@@ -197,6 +197,7 @@ Nanvix
 NemoClaw
 Nemotron
 Normalise
+OAEP
 OCSP
 OLLAMA
 ORAS
@@ -244,6 +245,7 @@ Rootfs
 RustCrypto
 RustSec
 Rwandan
+SECP
 SGHA
 SIEM
 SIGSTOP
@@ -517,6 +519,7 @@ exfiltrat
 exfiltrated
 exfiltration
 expanduser
+exponentials
 externalidentity
 fastapi
 fastembed
@@ -534,6 +537,7 @@ fmean
 fnmatch
 fnmatchcase
 folderlocation
+footgun
 formedness
 fria
 fromisoformat
@@ -608,7 +612,9 @@ isalnum
 isascii
 isatty
 isawaitable
+isclose
 iscoroutine
+iscoroutinefunction
 isdigit
 isdir
 isdisjoint
@@ -657,6 +663,7 @@ liamcrumm
 libagent
 libc
 licen
+lifecycles
 linkcheck
 linkified
 linkpkg
@@ -668,6 +675,9 @@ lockdown
 lockfile
 lockfiles
 logdir
+logit
+logits
+logprob
 logprobs
 loopback
 lotl
@@ -747,6 +757,7 @@ nfiu
 nmap
 nonblocking
 nonconformant
+nonfinite
 nonimport
 nonlocal
 nono
@@ -762,6 +773,7 @@ normpath
 nostr
 nother
 notrequirements
+noverify
 npmjs
 nsecure
 ntpath
@@ -825,6 +837,7 @@ popitem
 popleft
 posixpath
 posonlyargs
+preauthorize
 prayagupa
 preimage
 prependpath
@@ -972,6 +985,7 @@ slugification
 smol
 snupkg
 socat
+softmax
 spacy
 spanid
 specversion
@@ -1178,3 +1192,17 @@ karimad
 قومي
 GPAI
 Harmonised
+
+# --- audit_backends.py / govern.py fail-closed-error comment terms (PR #3916) ---
+CREAT
+ELOOP
+ENOSPC
+EPERM
+FCHMOD
+WRONLY
+containerised
+fchmod
+fileno
+fromhex
+fstat
+serialisation
