@@ -37,6 +37,15 @@ Direct users of ACS's `AcsInterceptor` and `ActivatedPolicy` follow ACS's own
 feature selection. Switching the legacy host's default backend is a separate
 behavior change, not a side effect of upgrading its dependency.
 
+The core compatibility shim forwards the optional `rego` and `streaming`
+features to ACS. Enable `rego` to use the in-process dispatcher through
+`agent_control_specification_core::rego`, or `streaming` to use
+`agent_control_specification_core::stream_session`. Both are disabled by
+default. Only these module paths are forwarded, not the upstream root-level
+Rego and streaming type re-exports.
+The shim retains its OPA dependency feature for alpha.3 compatibility,
+and these opt-ins do not change the legacy host's explicit OPA dispatcher.
+
 The committed lockfiles retain `ureq` 3.4.0 and `ureq-proto` 0.6.1, both
 published August 8. Their September 6 successors are inside the seven-day
 cooling-off window and are not used in these builds.
