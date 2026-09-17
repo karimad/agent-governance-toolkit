@@ -39,12 +39,8 @@ classifiers = [
 # Merged dependencies from agent-os-kernel, agentmesh-primitives,
 # agentmesh-runtime, agent-hypervisor, and agentmesh-platform.
 #
-# agent-control-specification is declared directly here because agent_os
-# (force-included below) imports it in providers.py, cmd_validate.py,
-# _native_adapter_runtime.py, and openai_agents_sdk.py. It used to arrive only
-# transitively through agt-policies; pinning it here keeps those imports
-# working independent of whether agt-policies (an unrelated CLI's dependency,
-# see the migrate extra) is installed.
+# agent-control-specification is declared directly: agent_os (force-included
+# below) imports it, and it previously arrived only transitively via agt-policies.
 dependencies = [
     "agent-control-specification>=0.3.1b0,<0.4.0",
     "pydantic[email]>=2.5.0,<3.0",
