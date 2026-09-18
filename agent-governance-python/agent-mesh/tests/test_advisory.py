@@ -226,6 +226,26 @@ class TestAdvisoryWithGovern:
 
         assert result["status"] == "executed"
 
+    def test_advisory_on_flag_exception_is_audited(self):
+        """A failing on_flag is discoverable in the audit trail, not just
+        application logs — on_flag is meant as a real extension point
+        (e.g. routing to a review queue), so a silently-broken one should
+        be findable without correlating timestamps against logs."""
+        advisory = CallbackAdvisory(
+            lambda ctx: AdvisoryDecision(action="flag_for_review", reason="Borderline"),
+            name="borderline-detector",
+        )
+        safe = govern(
+            dummy_tool, policy=ALLOW_ALL, advisory=advisory,
+            on_flag=lambda ctx, decision: (_ for _ in ()).throw(RuntimeError("callback bug")),
+        )
+        safe(action="read")
+
+        entries = safe.audit_log.query(event_type="on_flag_callback_error")
+        assert len(entries) == 1
+        assert entries[0].data.get("classifier") == "borderline-detector"
+        assert "callback bug" in entries[0].data.get("error", "")
+
     def test_advisory_block_does_not_call_on_flag(self):
         """on_flag is specific to flag_for_review — a block goes through
         on_deny (or raises), never on_flag."""

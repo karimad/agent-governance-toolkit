@@ -224,13 +224,16 @@ class GovernanceConfig:
             Unlike ``on_deny``, this never changes the outcome — the wrapped
             call still executes either way, since a flag can only annotate,
             never withhold, a deterministic allow. This holds even if the
-            callback itself raises: the exception is logged and swallowed
+            callback itself raises: the exception is logged, recorded as
+            its own ``on_flag_callback_error`` audit event, and swallowed
             rather than propagated, so a broken on_flag can't accidentally
-            start blocking execution. Receives the evaluation ``context``
-            dict and the ``AdvisoryDecision`` that triggered it; return
-            value is ignored. Default: ``None`` (no-op — the flag is still
-            recorded in the audit trail's ``advisory_check`` event either
-            way, just with no caller-visible effect beyond that).
+            start blocking execution while still being discoverable without
+            correlating application logs against audit timestamps. Receives
+            the evaluation ``context`` dict and the ``AdvisoryDecision``
+            that triggered it; return value is ignored. Default: ``None``
+            (no-op — the flag is still recorded in the audit trail's
+            ``advisory_check`` event either way, just with no caller-visible
+            effect beyond that).
         conflict_strategy: Policy conflict resolution strategy.
         ring: Optional execution ring for the agent. When set, ring-level
             resource constraints are enforced before policy evaluation and
@@ -470,8 +473,26 @@ class GovernedCallable:
                 if self._config.on_flag:
                     try:
                         self._config.on_flag(context, advisory_result)
-                    except Exception:
+                    except Exception as e:
                         logger.warning("on_flag callback failed", exc_info=True)
+                        # The flag itself is already in the advisory_check
+                        # entry above; a separate entry here means a failing
+                        # on_flag is visible in the audit trail too, not just
+                        # in application logs — on_flag is meant as a real
+                        # extension point (e.g. routing to a review queue),
+                        # so a silently-broken one is worth being able to
+                        # find without correlating timestamps against logs.
+                        if self._audit:
+                            self._audit.log(
+                                event_type="on_flag_callback_error",
+                                agent_did=self._config.agent_id,
+                                action=context.get("action", {}).get("type", "unknown"),
+                                outcome="error",
+                                data={
+                                    "classifier": advisory_result.classifier,
+                                    "error": str(e),
+                                },
+                            )
 
         # Allowed — execute the wrapped function
         return self._fn(*args, **kwargs)
