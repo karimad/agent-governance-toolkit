@@ -209,6 +209,23 @@ class TestAdvisoryWithGovern:
         assert decision.reason == "Borderline"
         assert decision.classifier == "borderline-detector"
 
+    def test_advisory_flag_for_review_survives_on_flag_exception(self):
+        """A broken on_flag callback must not be able to block execution —
+        that would contradict flag_for_review being annotation-only."""
+        def broken_on_flag(ctx, decision):
+            raise RuntimeError("callback bug")
+
+        advisory = CallbackAdvisory(
+            lambda ctx: AdvisoryDecision(action="flag_for_review", reason="Borderline"),
+        )
+        safe = govern(
+            dummy_tool, policy=ALLOW_ALL, advisory=advisory,
+            on_flag=broken_on_flag,
+        )
+        result = safe(action="read")
+
+        assert result["status"] == "executed"
+
     def test_advisory_block_does_not_call_on_flag(self):
         """on_flag is specific to flag_for_review — a block goes through
         on_deny (or raises), never on_flag."""

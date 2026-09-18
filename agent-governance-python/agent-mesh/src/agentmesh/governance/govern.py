@@ -223,11 +223,14 @@ class GovernanceConfig:
             ``action="flag_for_review"`` (see ``agentmesh.governance.advisory``).
             Unlike ``on_deny``, this never changes the outcome — the wrapped
             call still executes either way, since a flag can only annotate,
-            never withhold, a deterministic allow. Receives the evaluation
-            ``context`` dict and the ``AdvisoryDecision`` that triggered it;
-            return value is ignored. Default: ``None`` (no-op — the flag is
-            still recorded in the audit trail's ``advisory_check`` event
-            either way, just with no caller-visible effect beyond that).
+            never withhold, a deterministic allow. This holds even if the
+            callback itself raises: the exception is logged and swallowed
+            rather than propagated, so a broken on_flag can't accidentally
+            start blocking execution. Receives the evaluation ``context``
+            dict and the ``AdvisoryDecision`` that triggered it; return
+            value is ignored. Default: ``None`` (no-op — the flag is still
+            recorded in the audit trail's ``advisory_check`` event either
+            way, just with no caller-visible effect beyond that).
         conflict_strategy: Policy conflict resolution strategy.
         ring: Optional execution ring for the agent. When set, ring-level
             resource constraints are enforced before policy evaluation and
@@ -460,9 +463,15 @@ class GovernedCallable:
                 # it (see _run_advisory), but without this callback nothing
                 # else about the decision was ever reachable: it can only
                 # tighten, never withhold, a deterministic allow, so the
-                # wrapped call proceeds regardless of whether on_flag is set.
+                # wrapped call proceeds regardless of whether on_flag is set
+                # OR whether it raises — a broken on_flag callback must not
+                # be able to block execution any more than the flag itself
+                # can, or the "never changes the outcome" guarantee is fake.
                 if self._config.on_flag:
-                    self._config.on_flag(context, advisory_result)
+                    try:
+                        self._config.on_flag(context, advisory_result)
+                    except Exception:
+                        logger.warning("on_flag callback failed", exc_info=True)
 
         # Allowed — execute the wrapped function
         return self._fn(*args, **kwargs)
